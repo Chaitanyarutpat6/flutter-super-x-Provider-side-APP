@@ -1,10 +1,16 @@
+import 'dart:io';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:service_provider_side/view/main_dashboard_page.dart';
+import 'package:service_provider_side/model/job_model.dart';
+import 'package:service_provider_side/providers/job_provider.dart';
+import 'package:service_provider_side/providers/storage_provider.dart';
 
 class JobCompletionFormPage extends StatefulWidget {
-  //final VoidCallback onReportSubmitted;
-  const JobCompletionFormPage({super.key});
+  final JobModel job;
+  const JobCompletionFormPage({super.key, required this.job});
 
   @override
   State<JobCompletionFormPage> createState() => _JobCompletionFormPageState();
@@ -13,17 +19,82 @@ class JobCompletionFormPage extends StatefulWidget {
 class _JobCompletionFormPageState extends State<JobCompletionFormPage> {
   final _notesController = TextEditingController();
   final _materialsCostController = TextEditingController();
+  bool _isLoading = false;
 
-  // --- UI Colors ---
-  static const Color primaryColor = Color(0xFF1A237E); // Indigo
-  static const Color accentColor = Color(0xFF29B6F6); // Light Blue
+  XFile? _beforeImage;
+  XFile? _afterImage;
+  final ImagePicker _picker = ImagePicker();
 
-  void _submitReport() {
-    // Logic to handle form submission
-    print('Submitting job completion report...');
-    Navigator.of(context).popUntil(
-      ModalRoute.withName(MainDashboardPage.routeName),
-    ); // Go back to the main dashboard
+  static const Color primaryColor = Color(0xFF1A237E);
+  static const Color accentColor = Color(0xFF29B6F6);
+
+  Future<void> _pickImage({required bool isBefore}) async {
+    final XFile? pickedFile = await _picker.pickImage(
+      source: ImageSource.gallery,
+    );
+    if (pickedFile != null) {
+      setState(() {
+        if (isBefore) {
+          _beforeImage = pickedFile;
+        } else {
+          _afterImage = pickedFile;
+        }
+      });
+    }
+  }
+
+  Future<void> _submitReport() async {
+    setState(() => _isLoading = true);
+
+    final storageProvider = Provider.of<StorageProvider>(
+      context,
+      listen: false,
+    );
+    final jobProvider = Provider.of<JobProvider>(context, listen: false);
+
+    String? beforeImageUrl;
+    String? afterImageUrl;
+
+    // Upload before image if selected
+    if (_beforeImage != null) {
+      beforeImageUrl = await storageProvider.uploadImage(
+        _beforeImage!,
+        'jobs/${widget.job.id}',
+        'before_photo',
+      );
+    }
+
+    // Upload after image if selected
+    if (_afterImage != null) {
+      afterImageUrl = await storageProvider.uploadImage(
+        _afterImage!,
+        'jobs/${widget.job.id}',
+        'after_photo',
+      );
+    }
+
+    // Update the job document in Firestore
+    String? result = await jobProvider.completeJob(
+      jobId: widget.job.id,
+      reportNotes: _notesController.text,
+      materialsCost: double.tryParse(_materialsCostController.text) ?? 0.0,
+      beforeImageUrl: beforeImageUrl,
+      afterImageUrl: afterImageUrl,
+    );
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (result == 'success') {
+      Navigator.of(context).popUntil((route) => route.isFirst);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result ?? 'An error occurred.'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -85,8 +156,6 @@ class _JobCompletionFormPageState extends State<JobCompletionFormPage> {
     );
   }
 
-  // --- Widget Builders ---
-
   Widget _buildCustomAppBar(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
@@ -122,7 +191,7 @@ class _JobCompletionFormPageState extends State<JobCompletionFormPage> {
             borderRadius: BorderRadius.circular(20.0),
             border: Border.all(color: Colors.white.withOpacity(0.3)),
           ),
-          child: child,
+          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
     );
@@ -135,30 +204,52 @@ class _JobCompletionFormPageState extends State<JobCompletionFormPage> {
         _buildPhotoPlaceholder(
           'Upload "Before" Photo',
           Icons.camera_alt_outlined,
+          _beforeImage,
+          isBefore: true,
         ),
         _buildPhotoPlaceholder(
           'Upload "After" Photo',
           Icons.check_circle_outline,
+          _afterImage,
+          isBefore: false,
         ),
       ],
     );
   }
 
-  Widget _buildPhotoPlaceholder(String text, IconData icon) {
-    return Column(
-      children: [
-        Container(
-          height: 120,
-          width: 120,
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.1),
-            borderRadius: BorderRadius.circular(12.0),
+  Widget _buildPhotoPlaceholder(
+    String text,
+    IconData icon,
+    XFile? image, {
+    required bool isBefore,
+  }) {
+    return GestureDetector(
+      onTap: () => _pickImage(isBefore: isBefore),
+      child: Column(
+        children: [
+          Container(
+            height: 120,
+            width: 120,
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(12.0),
+              image:
+                  image != null
+                      ? DecorationImage(
+                        image: FileImage(File(image.path)),
+                        fit: BoxFit.cover,
+                      )
+                      : null,
+            ),
+            child:
+                image == null
+                    ? Icon(icon, color: Colors.white70, size: 40)
+                    : null,
           ),
-          child: Icon(icon, color: Colors.white70, size: 40),
-        ),
-        const SizedBox(height: 8),
-        Text(text, style: const TextStyle(color: Colors.white70)),
-      ],
+          const SizedBox(height: 8),
+          Text(text, style: const TextStyle(color: Colors.white70)),
+        ],
+      ),
     );
   }
 
@@ -194,7 +285,7 @@ class _JobCompletionFormPageState extends State<JobCompletionFormPage> {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: ElevatedButton(
-        onPressed: _submitReport,
+        onPressed: _isLoading ? null : _submitReport,
         style: ElevatedButton.styleFrom(
           backgroundColor: Colors.white,
           foregroundColor: primaryColor,
@@ -203,14 +294,17 @@ class _JobCompletionFormPageState extends State<JobCompletionFormPage> {
             borderRadius: BorderRadius.circular(16.0),
           ),
         ),
-        child: const Text(
-          'SUBMIT REPORT',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            letterSpacing: 1.2,
-          ),
-        ),
+        child:
+            _isLoading
+                ? const CircularProgressIndicator(color: primaryColor)
+                : const Text(
+                  'SUBMIT REPORT',
+                  style: TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    letterSpacing: 1.2,
+                  ),
+                ),
       ),
     );
   }

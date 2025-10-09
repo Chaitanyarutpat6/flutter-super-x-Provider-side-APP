@@ -67,7 +67,7 @@ class _LoginPageState extends State<LoginPage>
 
     if (result == 'success') {
       // Navigate to the dashboard on successful login
-      Navigator.of(context).pushReplacementNamed(MainDashboardPage.routeName);
+      Navigator.of(context).pop();
     } else {
       // Show an error message
       ScaffoldMessenger.of(context).showSnackBar(

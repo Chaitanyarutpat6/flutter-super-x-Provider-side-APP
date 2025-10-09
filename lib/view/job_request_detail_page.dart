@@ -1,19 +1,44 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:service_provider_side/model/job_model.dart';
+import 'package:service_provider_side/providers/job_provider.dart';
 
 class JobRequestDetailPage extends StatefulWidget {
-  const JobRequestDetailPage({super.key});
+  final JobModel job;
+  const JobRequestDetailPage({super.key, required this.job});
 
   @override
   State<JobRequestDetailPage> createState() => _JobRequestDetailPageState();
 }
 
 class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
+  bool _isLoading = false;
   bool _isMapVisible = false;
 
-  // --- UI Colors ---
-  static const Color primaryColor = Color(0xFF1A237E); // Indigo
-  static const Color accentColor = Color(0xFF29B6F6); // Light Blue
+  static const Color primaryColor = Color(0xFF1A237E);
+  static const Color accentColor = Color(0xFF29B6F6);
+
+  Future<void> _acceptJob() async {
+    setState(() => _isLoading = true);
+    final jobProvider = Provider.of<JobProvider>(context, listen: false);
+
+    String? result = await jobProvider.acceptJob(widget.job.id);
+
+    if (!mounted) return;
+    setState(() => _isLoading = false);
+
+    if (result == 'success') {
+      Navigator.of(context).pop();
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(result ?? 'An error occurred'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -37,27 +62,27 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        _buildHeader(),
+                        _buildHeader(widget.job),
                         const Divider(color: Colors.white30, height: 32),
                         _buildInfoRow(
                           Icons.description_outlined,
                           'Task Description',
-                          'Client reports a leaky faucet under the kitchen sink. Requires inspection, diagnosis, and repair. Possible part replacement needed.',
+                          widget.job.description ?? 'No description provided.',
                         ),
                         const SizedBox(height: 24),
                         _buildInfoRow(
                           Icons.timer_outlined,
                           'Estimated Time',
                           '1 - 2 Hours',
-                        ),
+                        ), // Placeholder
                         const SizedBox(height: 24),
                         _buildInfoRow(
                           Icons.account_balance_wallet_outlined,
                           'Payout',
-                          '₹500 - ₹700 (Final payout depends on work completed)',
+                          '₹${widget.job.payout.toStringAsFixed(0)}',
                         ),
                         const SizedBox(height: 24),
-                        _buildLocationSection(),
+                        _buildLocationSection(widget.job.location),
                         AnimatedContainer(
                           duration: const Duration(milliseconds: 300),
                           height: _isMapVisible ? 150 : 0,
@@ -72,7 +97,7 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
                   ),
                 ),
               ),
-              _buildActionButtons(context),
+              _buildActionButtons(),
             ],
           ),
         ),
@@ -80,7 +105,7 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
     );
   }
 
-  // --- Widget Builders ---
+  // --- ALL HELPER METHODS ARE NOW INCLUDED ---
 
   Widget _buildCustomAppBar(BuildContext context) {
     return Padding(
@@ -117,45 +142,46 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
             borderRadius: BorderRadius.circular(20.0),
             border: Border.all(color: Colors.white.withOpacity(0.3)),
           ),
-          child: child,
+          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
     );
   }
 
-  Widget _buildHeader() {
+  Widget _buildHeader(JobModel job) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            color: Colors.redAccent.withOpacity(0.8),
-            borderRadius: BorderRadius.circular(30.0),
-          ),
-          child: const Text(
-            'URGENT',
-            style: TextStyle(
-              color: Colors.white,
-              fontWeight: FontWeight.bold,
-              fontSize: 12,
+        if (job.title.toLowerCase().contains('urgent'))
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.redAccent.withOpacity(0.8),
+              borderRadius: BorderRadius.circular(30.0),
+            ),
+            child: const Text(
+              'URGENT',
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: FontWeight.bold,
+                fontSize: 12,
+              ),
             ),
           ),
-        ),
         const SizedBox(height: 12),
-        const Text(
-          'Leaky Faucet Repair',
-          style: TextStyle(
+        Text(
+          job.title,
+          style: const TextStyle(
             color: Colors.white,
             fontSize: 24,
             fontWeight: FontWeight.bold,
           ),
         ),
         const SizedBox(height: 8),
-        const Text(
-          'Posted 15 minutes ago',
-          style: TextStyle(color: Colors.white70, fontSize: 14),
-        ),
+        Text(
+          'Posted a few minutes ago',
+          style: const TextStyle(color: Colors.white70, fontSize: 14),
+        ), // Placeholder
       ],
     );
   }
@@ -194,7 +220,7 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
     );
   }
 
-  Widget _buildLocationSection() {
+  Widget _buildLocationSection(String location) {
     return Column(
       children: [
         const Divider(color: Colors.white30),
@@ -208,11 +234,11 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
               size: 28,
             ),
             const SizedBox(width: 20),
-            const Expanded(
+            Expanded(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(
+                  const Text(
                     'Location',
                     style: TextStyle(
                       color: Colors.white70,
@@ -220,10 +246,10 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
                       fontWeight: FontWeight.bold,
                     ),
                   ),
-                  SizedBox(height: 6),
+                  const SizedBox(height: 6),
                   Text(
-                    'A-123, Rosewood Society, Koregaon Park, Pune',
-                    style: TextStyle(
+                    location,
+                    style: const TextStyle(
                       color: Colors.white,
                       fontSize: 16,
                       height: 1.5,
@@ -239,11 +265,7 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
                     : Icons.keyboard_arrow_down,
                 color: Colors.white,
               ),
-              onPressed: () {
-                setState(() {
-                  _isMapVisible = !_isMapVisible;
-                });
-              },
+              onPressed: () => setState(() => _isMapVisible = !_isMapVisible),
             ),
           ],
         ),
@@ -277,18 +299,15 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
     );
   }
 
-  Widget _buildActionButtons(BuildContext context) {
+  Widget _buildActionButtons() {
     return Padding(
       padding: const EdgeInsets.all(16.0),
       child: Row(
         children: [
           Expanded(
-            flex: 1,
+            flex: 2,
             child: ElevatedButton(
-              onPressed: () {
-                print('Job Accepted!');
-                Navigator.of(context).pop();
-              },
+              onPressed: _isLoading ? null : _acceptJob,
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 18.0),
                 backgroundColor: Colors.white,
@@ -297,20 +316,27 @@ class _JobRequestDetailPageState extends State<JobRequestDetailPage> {
                   borderRadius: BorderRadius.circular(12.0),
                 ),
               ),
-              child: const Text(
-                'ACCEPT JOB',
-                style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
+              child:
+                  _isLoading
+                      ? const SizedBox(
+                        height: 24,
+                        width: 24,
+                        child: CircularProgressIndicator(color: primaryColor),
+                      )
+                      : const Text(
+                        'ACCEPT JOB',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                        ),
+                      ),
             ),
           ),
           const SizedBox(width: 16),
           Expanded(
             flex: 1,
             child: OutlinedButton(
-              onPressed: () {
-                print('Job Rejected');
-                Navigator.of(context).pop();
-              },
+              onPressed: _isLoading ? null : () => Navigator.of(context).pop(),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 18.0),
                 foregroundColor: Colors.white,

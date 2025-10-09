@@ -1,47 +1,41 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:service_provider_side/model/notification_model.dart';
+import 'package:service_provider_side/providers/profile_provider.dart';
 
 class NotificationsPage extends StatelessWidget {
   const NotificationsPage({super.key});
-
-  // Dummy data for notifications
-  final List<Map<String, dynamic>> notifications = const [
-    {
-      'icon': Icons.work_outline,
-      'color': Colors.blue,
-      'title': 'New Job Opportunity!',
-      'subtitle': 'A new plumbing job is available in Koregaon Park.',
-      'time': '5m ago'
-    },
-    {
-      'icon': Icons.check_circle_outline,
-      'color': Colors.green,
-      'title': 'Job #J782 Completed',
-      'subtitle': 'You have successfully completed the AC repair job.',
-      'time': '2h ago'
-    },
-    {
-      'icon': Icons.account_balance_wallet_outlined,
-      'color': Colors.purple,
-      'title': 'Payout Processed',
-      'subtitle': 'A payout of ₹5,500 has been sent to your account.',
-      'time': '1d ago'
-    },
-     {
-      'icon': Icons.chat_bubble_outline,
-      'color': Colors.orange,
-      'title': 'New Message from Manager',
-      'subtitle': 'Please check your chat for an update on the client request.',
-      'time': '2d ago'
-    },
-  ];
 
   // --- UI Colors ---
   static const Color primaryColor = Color(0xFF1A237E);
   static const Color accentColor = Color(0xFF29B6F6);
 
+  // Helper to get icon and color based on notification type
+  Map<String, dynamic> _getNotificationIcon(String type) {
+    switch (type) {
+      case 'new_job':
+        return {'icon': Icons.work_outline, 'color': Colors.blue};
+      case 'payout':
+        return {
+          'icon': Icons.account_balance_wallet_outlined,
+          'color': Colors.purple,
+        };
+      case 'message':
+        return {'icon': Icons.chat_bubble_outline, 'color': Colors.orange};
+      default:
+        return {'icon': Icons.notifications, 'color': Colors.grey};
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    final profileProvider = Provider.of<ProfileProvider>(
+      context,
+      listen: false,
+    );
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -56,17 +50,46 @@ class NotificationsPage extends StatelessWidget {
             children: [
               _buildCustomAppBar(context),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: notifications.length,
-                  itemBuilder: (context, index) {
-                    final notification = notifications[index];
-                    return _buildNotificationCard(
-                      icon: notification['icon'],
-                      color: notification['color'],
-                      title: notification['title'],
-                      subtitle: notification['subtitle'],
-                      time: notification['time'],
+                child: StreamBuilder<List<NotificationModel>>(
+                  stream: profileProvider.notificationsStream,
+                  builder: (context, snapshot) {
+                    if (snapshot.hasError) {
+                      print(
+                        "!!! NOTIFICATIONS STREAM ERROR: ${snapshot.error}",
+                      );
+                    }
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    }
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Center(
+                        child: _buildGlassCard(
+                          child: const Text(
+                            'No notifications found.',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      );
+                    }
+                    final notifications = snapshot.data!;
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16.0),
+                      itemCount: notifications.length,
+                      itemBuilder: (context, index) {
+                        final notification = notifications[index];
+                        final iconData = _getNotificationIcon(
+                          notification.type,
+                        );
+                        return _buildNotificationCard(
+                          icon: iconData['icon'],
+                          color: iconData['color'],
+                          title: notification.title,
+                          subtitle: notification.body,
+                          time: DateFormat.jm().format(notification.createdAt),
+                        );
+                      },
                     );
                   },
                 ),
@@ -79,7 +102,6 @@ class NotificationsPage extends StatelessWidget {
   }
 
   // --- Widget Builders ---
-
   Widget _buildCustomAppBar(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
@@ -92,9 +114,12 @@ class NotificationsPage extends StatelessWidget {
           ),
           const Text(
             'Notifications',
-            style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 24,
+              fontWeight: FontWeight.bold,
+            ),
           ),
-          // A spacer to balance the back button
           const SizedBox(width: 48),
         ],
       ),
@@ -113,10 +138,7 @@ class NotificationsPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(20.0),
             border: Border.all(color: Colors.white.withOpacity(0.3)),
           ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: child,
-          ),
+          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
     );
@@ -144,14 +166,27 @@ class NotificationsPage extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text(title, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                  Text(
+                    title,
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
                   const SizedBox(height: 4),
-                  Text(subtitle, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                  Text(
+                    subtitle,
+                    style: const TextStyle(color: Colors.white70, fontSize: 14),
+                  ),
                 ],
               ),
             ),
             const SizedBox(width: 16),
-            Text(time, style: const TextStyle(color: Colors.white70, fontSize: 12)),
+            Text(
+              time,
+              style: const TextStyle(color: Colors.white70, fontSize: 12),
+            ),
           ],
         ),
       ),

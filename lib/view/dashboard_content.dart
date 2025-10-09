@@ -1,5 +1,6 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:service_provider_side/model/job_model.dart';
 import 'package:service_provider_side/providers/job_provider.dart';
@@ -8,27 +9,30 @@ import 'package:service_provider_side/view/job_request_detail_page.dart';
 class DashboardContent extends StatelessWidget {
   const DashboardContent({super.key});
 
-  // --- UI Colors ---
-  static const Color primaryColor = Color(0xFF1A237E);
-  static const Color accentColor = Color(0xFF29B6F6);
-
   @override
   Widget build(BuildContext context) {
-    // This widget is just the scrollable content. No Scaffold.
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16.0),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildSummarySection(),
-          const SizedBox(height: 24),
-          _buildOpportunitiesSection(),
-        ],
-      ),
+    // Wrap the UI in a Consumer to listen for changes from JobProvider
+    return Consumer<JobProvider>(
+      builder: (context, jobProvider, child) {
+        return SingleChildScrollView(
+          padding: const EdgeInsets.all(16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              _buildSummarySection(context, jobProvider),
+              const SizedBox(height: 24),
+              _buildScheduleSection(context, jobProvider),
+              const SizedBox(height: 24),
+              _buildOpportunitiesSection(context, jobProvider),
+            ],
+          ),
+        );
+      },
     );
   }
 
-  // --- Reusable Glassmorphism Card ---
+  // --- All helper methods are now stateless and don't need to be in a State class ---
+
   Widget _buildGlassCard({required Widget child}) {
     return ClipRRect(
       borderRadius: BorderRadius.circular(20.0),
@@ -47,7 +51,6 @@ class DashboardContent extends StatelessWidget {
     );
   }
 
-  // --- Section Header ---
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 8.0, bottom: 12.0),
@@ -62,9 +65,7 @@ class DashboardContent extends StatelessWidget {
     );
   }
 
-  // --- Widget Builders for Sections ---
-
-  Widget _buildSummarySection() {
+  Widget _buildSummarySection(BuildContext context, JobProvider jobProvider) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -92,18 +93,34 @@ class DashboardContent extends StatelessWidget {
         Row(
           children: [
             Expanded(
-              child: _buildGlassCard(
-                child: _buildSummaryItem(
-                  'Today\'s Earnings',
-                  '₹1,500',
-                  Colors.greenAccent,
-                ),
+              child: StreamBuilder<double>(
+                stream: jobProvider.todaysEarningsStream,
+                builder: (context, snapshot) {
+                  final earnings = snapshot.data ?? 0.0;
+                  return _buildGlassCard(
+                    child: _buildSummaryItem(
+                      'Today\'s Earnings',
+                      '₹${earnings.toStringAsFixed(0)}',
+                      Colors.greenAccent,
+                    ),
+                  );
+                },
               ),
             ),
             const SizedBox(width: 16),
             Expanded(
-              child: _buildGlassCard(
-                child: _buildSummaryItem('Upcoming Jobs', '3', accentColor),
+              child: StreamBuilder<List<JobModel>>(
+                stream: jobProvider.scheduledJobsStream,
+                builder: (context, snapshot) {
+                  final jobCount = snapshot.data?.length ?? 0;
+                  return _buildGlassCard(
+                    child: _buildSummaryItem(
+                      'Upcoming Jobs',
+                      jobCount.toString(),
+                      const Color(0xFF29B6F6),
+                    ),
+                  );
+                },
               ),
             ),
           ],
@@ -133,31 +150,108 @@ class DashboardContent extends StatelessWidget {
     );
   }
 
-  Widget _buildOpportunitiesSection() {
+  Widget _buildScheduleSection(BuildContext context, JobProvider jobProvider) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        _buildSectionHeader('At-a-Glance Schedule'),
+        StreamBuilder<List<JobModel>>(
+          stream: jobProvider.scheduledJobsStream,
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return _buildGlassCard(
+                child: const Center(
+                  child: CircularProgressIndicator(color: Colors.white),
+                ),
+              );
+            }
+            if (!snapshot.hasData || snapshot.data!.isEmpty) {
+              return _buildGlassCard(
+                child: const Text(
+                  'No upcoming jobs on your schedule.',
+                  style: TextStyle(color: Colors.white70),
+                ),
+              );
+            }
+            final scheduledJobs = snapshot.data!;
+            return _buildGlassCard(
+              child: Column(
+                children:
+                    scheduledJobs.map((job) {
+                      final time = TimeOfDay.fromDateTime(
+                        job.postedDate,
+                      ).format(context);
+                      final date = DateFormat.yMMMd().format(job.postedDate);
+                      return _buildScheduleItem(time, job.title, date);
+                    }).toList(),
+              ),
+            );
+          },
+        ),
+      ],
+    );
+  }
+
+  Widget _buildScheduleItem(String time, String title, String date) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        children: [
+          const Icon(Icons.timer_outlined, color: Colors.white, size: 28),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '$date - $time',
+                  style: const TextStyle(
+                    color: Colors.white70,
+                    fontSize: 12,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildOpportunitiesSection(
+    BuildContext context,
+    JobProvider jobProvider,
+  ) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         _buildSectionHeader('New Opportunities'),
-        // --- THIS IS THE NEW DYNAMIC PART ---
         StreamBuilder<List<JobModel>>(
-          stream:
-              JobProvider()
-                  .newJobsStream, // Listen to the stream from JobProvider
+          stream: jobProvider.newJobsStream,
           builder: (context, snapshot) {
-            // Case 1: Waiting for data
             if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Center(child: CircularProgressIndicator());
+              return const Center(
+                child: CircularProgressIndicator(color: Colors.white),
+              );
             }
-            // Case 2: Error fetching data
             if (snapshot.hasError) {
               return _buildGlassCard(
-                child: Text(
+                child: const Text(
                   'Error loading jobs.',
-                  style: TextStyle(color: Colors.redAccent[100]),
+                  style: TextStyle(color: Colors.redAccent),
                 ),
               );
             }
-            // Case 3: No data available
             if (!snapshot.hasData || snapshot.data!.isEmpty) {
               return _buildGlassCard(
                 child: const Text(
@@ -166,22 +260,14 @@ class DashboardContent extends StatelessWidget {
                 ),
               );
             }
-
-            // Case 4: Data is available, build the list
             final jobs = snapshot.data!;
             return ListView.builder(
               itemCount: jobs.length,
-              shrinkWrap: true, // Important for ListView inside a Column
-              physics:
-                  const NeverScrollableScrollPhysics(), // Disable ListView's own scrolling
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
               itemBuilder: (context, index) {
                 final job = jobs[index];
-                return _buildOpportunityItem(
-                  context: context,
-                  title: job.title,
-                  location: job.location,
-                  payment: '₹${job.payout.toStringAsFixed(0)}',
-                );
+                return _buildOpportunityItem(context: context, job: job);
               },
             );
           },
@@ -192,9 +278,7 @@ class DashboardContent extends StatelessWidget {
 
   Widget _buildOpportunityItem({
     required BuildContext context,
-    required String title,
-    required String location,
-    required String payment,
+    required JobModel job,
   }) {
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -202,7 +286,7 @@ class DashboardContent extends StatelessWidget {
         onTap: () {
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (context) => const JobRequestDetailPage(),
+              builder: (context) => JobRequestDetailPage(job: job),
             ),
           );
         },
@@ -212,7 +296,7 @@ class DashboardContent extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                title,
+                job.title,
                 style: const TextStyle(
                   color: Colors.white,
                   fontWeight: FontWeight.bold,
@@ -229,7 +313,7 @@ class DashboardContent extends StatelessWidget {
                   ),
                   const SizedBox(width: 4),
                   Text(
-                    location,
+                    job.location,
                     style: const TextStyle(color: Colors.white70, fontSize: 14),
                   ),
                 ],
@@ -239,7 +323,7 @@ class DashboardContent extends StatelessWidget {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    payment,
+                    '₹${job.payout.toStringAsFixed(0)}',
                     style: const TextStyle(
                       color: Colors.greenAccent,
                       fontWeight: FontWeight.bold,
@@ -260,93 +344,37 @@ class DashboardContent extends StatelessWidget {
     );
   }
 }
-
-/////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
+////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////////
 // import 'dart:ui';
 // import 'package:flutter/material.dart';
-// import 'dart:ui';
-// import 'package:flutter/material.dart';
-// import 'job_request_detail_page.dart';
-// import 'my_schedule_page.dart';
+// import 'package:intl/intl.dart';
+// import 'package:provider/provider.dart';
+// import 'package:service_provider_side/model/job_model.dart';
+// import 'package:service_provider_side/providers/job_provider.dart';
+// import 'package:service_provider_side/view/job_request_detail_page.dart';
 
-// class DashboardContent extends StatefulWidget {
+// class DashboardContent extends StatelessWidget {
 //   const DashboardContent({super.key});
 
-//   @override
-//   State<DashboardContent> createState() => _MainDashboardPageStates();
-// }
-
-// class _MainDashboardPageStates extends State<DashboardContent> {
-//   int _currentIndex = 0;
-
 //   // --- UI Colors ---
-//   static const Color primaryColor = Color(0xFF1A237E); // Indigo
-//   static const Color accentColor = Color(0xFF29B6F6); // Light Blue
+//   static const Color primaryColor = Color(0xFF1A237E);
+//   static const Color accentColor = Color(0xFF29B6F6);
 
 //   @override
 //   Widget build(BuildContext context) {
-//     return Scaffold(
-//       // --- Gradient Background ---
-//       body: Container(
-//         decoration: const BoxDecoration(
-//           gradient: LinearGradient(
-//             colors: [primaryColor, accentColor],
-//             begin: Alignment.topLeft,
-//             end: Alignment.bottomRight,
-//           ),
-//         ),
-//         child: SafeArea(
-//           child: Column(
-//             children: [
-//               // _buildCustomAppBar(),
-//               Expanded(
-//                 child: SingleChildScrollView(
-//                   padding: const EdgeInsets.all(16.0),
-//                   child: Column(
-//                     crossAxisAlignment: CrossAxisAlignment.start,
-//                     children: [
-//                       _buildSummarySection(),
-//                       const SizedBox(height: 24),
-//                       _buildScheduleSection(),
-//                       const SizedBox(height: 24),
-//                       _buildOpportunitiesSection(),
-//                     ],
-//                   ),
-//                 ),
-//               ),
-//             ],
-//           ),
-//         ),
-//       ),
-//     );
-//   }
+//     // We get the provider once here, but set listen to false because the StreamBuilders will handle listening.
+//     final jobProvider = Provider.of<JobProvider>(context, listen: false);
 
-//   // --- Custom App Bar ---
-//   Widget _buildCustomAppBar() {
-//     return const Padding(
-//       padding: EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-//       child: Row(
-//         mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//     return SingleChildScrollView(
+//       padding: const EdgeInsets.all(16.0),
+//       child: Column(
+//         crossAxisAlignment: CrossAxisAlignment.start,
 //         children: [
-//           Text(
-//             'Dashboard',
-//             style: TextStyle(
-//               color: Colors.white,
-//               fontSize: 28,
-//               fontWeight: FontWeight.bold,
-//             ),
-//           ),
-//           Row(
-//             children: [
-//               Icon(Icons.notifications_outlined, color: Colors.white, size: 28),
-//               SizedBox(width: 16),
-//               Icon(
-//                 Icons.account_circle_outlined,
-//                 color: Colors.white,
-//                 size: 28,
-//               ),
-//             ],
-//           ),
+//           _buildSummarySection(context, jobProvider), // Pass provider
+//           const SizedBox(height: 24),
+//           _buildScheduleSection(context, jobProvider),
+//           const SizedBox(height: 24),
+//           _buildOpportunitiesSection(context, jobProvider),
 //         ],
 //       ),
 //     );
@@ -365,7 +393,7 @@ class DashboardContent extends StatelessWidget {
 //             borderRadius: BorderRadius.circular(20.0),
 //             border: Border.all(color: Colors.white.withOpacity(0.3)),
 //           ),
-//           child: child,
+//           child: Material(type: MaterialType.transparency, child: child),
 //         ),
 //       ),
 //     );
@@ -386,9 +414,10 @@ class DashboardContent extends StatelessWidget {
 //     );
 //   }
 
-//   // --- Dashboard Sections ---
+//   // --- WIDGET BUILDERS FOR SECTIONS ---
 
-//   Widget _buildSummarySection() {
+//   // --- THIS IS THE UPDATED SUMMARY SECTION ---
+//   Widget _buildSummarySection(BuildContext context, JobProvider jobProvider) {
 //     return Column(
 //       crossAxisAlignment: CrossAxisAlignment.start,
 //       children: [
@@ -415,19 +444,43 @@ class DashboardContent extends StatelessWidget {
 //         ),
 //         Row(
 //           children: [
+//             // --- Today's Earnings Card (Now Dynamic) ---
 //             Expanded(
-//               child: _buildGlassCard(
-//                 child: _buildSummaryItem(
-//                   'Today\'s Earnings',
-//                   '₹1,500',
-//                   Colors.greenAccent,
-//                 ),
+//               child: StreamBuilder<double>(
+//                 stream: jobProvider.todaysEarningsStream,
+//                 builder: (context, snapshot) {
+//                   if (snapshot.hasError) {
+//                     print("!!! EARNINGS STREAM ERROR: ${snapshot.error}");
+//                   }
+//                   final earnings = snapshot.data ?? 0.0;
+//                   return _buildGlassCard(
+//                     child: _buildSummaryItem(
+//                       'Today\'s Earnings',
+//                       '₹${earnings.toStringAsFixed(0)}',
+//                       Colors.greenAccent,
+//                     ),
+//                   );
+//                 },
 //               ),
 //             ),
 //             const SizedBox(width: 16),
+//             // --- Upcoming Jobs Card (Now Dynamic) ---
 //             Expanded(
-//               child: _buildGlassCard(
-//                 child: _buildSummaryItem('Upcoming Jobs', '3', accentColor),
+//               child: StreamBuilder<List<JobModel>>(
+//                 stream: jobProvider.scheduledJobsStream,
+//                 builder: (context, snapshot) {
+//                   if (snapshot.hasError) {
+//                     print("!!! EARNINGS STREAM ERROR: ${snapshot.error}");
+//                   }
+//                   final jobCount = snapshot.data?.length ?? 0;
+//                   return _buildGlassCard(
+//                     child: _buildSummaryItem(
+//                       'Upcoming Jobs',
+//                       jobCount.toString(),
+//                       accentColor,
+//                     ),
+//                   );
+//                 },
 //               ),
 //             ),
 //           ],
@@ -457,155 +510,204 @@ class DashboardContent extends StatelessWidget {
 //     );
 //   }
 
-//   Widget _buildScheduleSection() {
+//   Widget _buildScheduleSection(BuildContext context, JobProvider jobProvider) {
 //     return Column(
 //       crossAxisAlignment: CrossAxisAlignment.start,
 //       children: [
 //         _buildSectionHeader('At-a-Glance Schedule'),
-//         _buildGlassCard(
-//           child: Column(
-//             children: [
-//               _buildScheduleItem(
-//                 '10:00 AM - Today',
-//                 'Plumbing Fix at Koregaon Park',
+//         StreamBuilder<List<JobModel>>(
+//           stream: jobProvider.scheduledJobsStream,
+//           builder: (context, snapshot) {
+//             if (snapshot.connectionState == ConnectionState.waiting) {
+//               return _buildGlassCard(
+//                 child: const Center(
+//                   child: CircularProgressIndicator(color: Colors.white),
+//                 ),
+//               );
+//             }
+//             if (!snapshot.hasData || snapshot.data!.isEmpty) {
+//               return _buildGlassCard(
+//                 child: const Text(
+//                   'No upcoming jobs on your schedule.',
+//                   style: TextStyle(color: Colors.white70),
+//                 ),
+//               );
+//             }
+//             final scheduledJobs = snapshot.data!;
+//             return _buildGlassCard(
+//               child: Column(
+//                 children:
+//                     scheduledJobs.map((job) {
+//                       final time = TimeOfDay.fromDateTime(
+//                         job.postedDate,
+//                       ).format(context);
+//                       String formattedDate = DateFormat('yyyy-MM-dd').format(job.postedDate);
+//                       return _buildScheduleItem(time, job.title, formattedDate);
+//                     }).toList(),
 //               ),
-//               const Divider(color: Colors.white30, height: 24),
-//               _buildScheduleItem('02:30 PM - Today', 'AC Servicing at Baner'),
-//               const Divider(color: Colors.white30, height: 24),
-//               _buildScheduleItem(
-//                 '09:00 AM - Tomorrow',
-//                 'Electrical Wiring Check',
-//               ),
-//             ],
-//           ),
+//             );
+//           },
 //         ),
 //       ],
 //     );
 //   }
 
-//   Widget _buildScheduleItem(String time, String title) {
-//     return Row(
+//   Widget _buildScheduleItem(String time, String title, String date) {
+//     return Padding(
+//       padding: const EdgeInsets.symmetric(vertical: 8.0),
+//       child: Row(
+//         children: [
+//           const Icon(Icons.timer_outlined, color: Colors.white, size: 28),
+//           const SizedBox(width: 16),
+//           Expanded(
+//             child: Column(
+//               crossAxisAlignment: CrossAxisAlignment.start,
+//               children: [
+//                 Text(
+//                   time,
+//                   style: const TextStyle(
+//                     color: Colors.white70,
+//                     fontSize: 12,
+//                     fontWeight: FontWeight.bold,
+//                   ),
+//                 ),
+//                 const SizedBox(height: 4),
+//                 Text(
+//                   title,
+//                   style: const TextStyle(
+//                     color: Colors.white,
+//                     fontWeight: FontWeight.bold,
+//                     fontSize: 16,
+//                   ),
+//                 ),
+//                 const SizedBox(height: 4),
+//                 Text(
+//                   date,
+//                   style: const TextStyle(
+//                     color: Colors.white,
+//                     fontWeight: FontWeight.bold,
+//                     fontSize: 16,
+//                   ),
+//                 ),
+//               ],
+//             ),
+//           ),
+//         ],
+//       ),
+//     );
+//   }
+
+//   Widget _buildOpportunitiesSection(
+//     BuildContext context,
+//     JobProvider jobProvider,
+//   ) {
+//     return Column(
+//       crossAxisAlignment: CrossAxisAlignment.start,
 //       children: [
-//         const Icon(Icons.timer_outlined, color: Colors.white, size: 28),
-//         const SizedBox(width: 16),
-//         Expanded(
+//         _buildSectionHeader('New Opportunities'),
+//         StreamBuilder<List<JobModel>>(
+//           stream: jobProvider.newJobsStream,
+//           builder: (context, snapshot) {
+//             if (snapshot.connectionState == ConnectionState.waiting) {
+//               return const Center(
+//                 child: CircularProgressIndicator(color: Colors.white),
+//               );
+//             }
+//             if (snapshot.hasError) {
+//               return _buildGlassCard(
+//                 child: const Text(
+//                   'Error loading jobs.',
+//                   style: TextStyle(color: Colors.redAccent),
+//                 ),
+//               );
+//             }
+//             if (!snapshot.hasData || snapshot.data!.isEmpty) {
+//               return _buildGlassCard(
+//                 child: const Text(
+//                   'No new job opportunities at the moment.',
+//                   style: TextStyle(color: Colors.white70),
+//                 ),
+//               );
+//             }
+//             final jobs = snapshot.data!;
+//             return ListView.builder(
+//               itemCount: jobs.length,
+//               shrinkWrap: true,
+//               physics: const NeverScrollableScrollPhysics(),
+//               itemBuilder: (context, index) {
+//                 final job = jobs[index];
+//                 return _buildOpportunityItem(context: context, job: job);
+//               },
+//             );
+//           },
+//         ),
+//       ],
+//     );
+//   }
+
+//   Widget _buildOpportunityItem({
+//     required BuildContext context,
+//     required JobModel job,
+//   }) {
+//     return Padding(
+//       padding: const EdgeInsets.only(bottom: 12.0),
+//       child: InkWell(
+//         onTap: () {
+//           Navigator.of(context).push(
+//             MaterialPageRoute(
+//               builder: (context) => JobRequestDetailPage(job: job),
+//             ),
+//           );
+//         },
+//         borderRadius: BorderRadius.circular(20.0),
+//         child: _buildGlassCard(
 //           child: Column(
 //             crossAxisAlignment: CrossAxisAlignment.start,
 //             children: [
 //               Text(
-//                 time,
-//                 style: const TextStyle(
-//                   color: Colors.white70,
-//                   fontSize: 12,
-//                   fontWeight: FontWeight.bold,
-//                 ),
-//               ),
-//               const SizedBox(height: 4),
-//               Text(
-//                 title,
+//                 job.title,
 //                 style: const TextStyle(
 //                   color: Colors.white,
 //                   fontWeight: FontWeight.bold,
 //                   fontSize: 16,
 //                 ),
 //               ),
-//             ],
-//           ),
-//         ),
-//       ],
-//     );
-//   }
-
-//   Widget _buildOpportunitiesSection() {
-//     return Column(
-//       crossAxisAlignment: CrossAxisAlignment.start,
-//       children: [
-//         _buildSectionHeader('New Opportunities'),
-//         _buildGlassCard(
-//           child: Column(
-//             children: [
-//               _buildOpportunityItem(
-//                 'Urgent: Leaky Faucet Repair',
-//                 'Hinjewadi Phase 1',
-//                 '₹500 - ₹700',
-//               ),
-//               const Divider(color: Colors.white30, height: 24),
-//               _buildOpportunityItem(
-//                 'Full Home Wiring Installation',
-//                 'Viman Nagar',
-//                 '₹10,000+ (Quote)',
-//               ),
-//             ],
-//           ),
-//         ),
-//       ],
-//     );
-//   }
-
-//   // In lib/main_dashboard_page.dart
-
-//   Widget _buildOpportunityItem(String title, String location, String payment) {
-//     // Wrap the card's content in an InkWell to make it tappable
-//     return InkWell(
-//       onTap: () {
-//         Navigator.of(context).push(
-//           MaterialPageRoute(builder: (context) => const JobRequestDetailPage()),
-//         );
-//         print('Navigating to Job Detail for: $title');
-//         // TODO: Replace with actual navigation to the Job Request Detail page
-//         // Navigator.of(context).push(MaterialPageRoute(
-//         //   builder: (context) => JobRequestDetailPage(jobId: '...'),
-//         // ));
-//       },
-//       child: _buildGlassCard(
-//         // Re-using your existing beautiful card
-//         child: Column(
-//           crossAxisAlignment: CrossAxisAlignment.start,
-//           children: [
-//             Text(
-//               title,
-//               style: const TextStyle(
-//                 color: Colors.white,
-//                 fontWeight: FontWeight.bold,
-//                 fontSize: 16,
-//               ),
-//             ),
-//             const SizedBox(height: 8),
-//             Row(
-//               children: [
-//                 const Icon(
-//                   Icons.location_on_outlined,
-//                   color: Colors.white70,
-//                   size: 16,
-//                 ),
-//                 const SizedBox(width: 4),
-//                 Text(
-//                   location,
-//                   style: const TextStyle(color: Colors.white70, fontSize: 14),
-//                 ),
-//               ],
-//             ),
-//             const SizedBox(height: 12),
-//             Row(
-//               mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//               children: [
-//                 Text(
-//                   payment,
-//                   style: const TextStyle(
-//                     color: Colors.greenAccent,
-//                     fontWeight: FontWeight.bold,
-//                     fontSize: 16,
+//               const SizedBox(height: 8),
+//               Row(
+//                 children: [
+//                   const Icon(
+//                     Icons.location_on_outlined,
+//                     color: Colors.white70,
+//                     size: 16,
 //                   ),
-//                 ),
-//                 // The button is now a visual indicator, the whole card is tappable
-//                 const Icon(
-//                   Icons.arrow_forward_ios,
-//                   color: Colors.white70,
-//                   size: 16,
-//                 ),
-//               ],
-//             ),
-//           ],
+//                   const SizedBox(width: 4),
+//                   Text(
+//                     job.location,
+//                     style: const TextStyle(color: Colors.white70, fontSize: 14),
+//                   ),
+//                 ],
+//               ),
+//               const SizedBox(height: 12),
+//               Row(
+//                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
+//                 children: [
+//                   Text(
+//                     '₹${job.payout.toStringAsFixed(0)}',
+//                     style: const TextStyle(
+//                       color: Colors.greenAccent,
+//                       fontWeight: FontWeight.bold,
+//                       fontSize: 16,
+//                     ),
+//                   ),
+//                   const Icon(
+//                     Icons.arrow_forward_ios,
+//                     color: Colors.white70,
+//                     size: 16,
+//                   ),
+//                 ],
+//               ),
+//             ],
+//           ),
 //         ),
 //       ),
 //     );

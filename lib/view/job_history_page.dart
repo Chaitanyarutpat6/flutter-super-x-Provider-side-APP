@@ -1,6 +1,11 @@
+import 'dart:developer';
 import 'dart:ui';
 import 'package:flutter/material.dart';
-import 'completed_job_detail_page.dart'; // Import the new page
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:service_provider_side/model/job_model.dart';
+import 'package:service_provider_side/providers/job_provider.dart';
+import 'completed_job_detail_page.dart';
 
 class JobHistoryPage extends StatelessWidget {
   const JobHistoryPage({super.key});
@@ -8,14 +13,7 @@ class JobHistoryPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // This is a content page, so it doesn't need its own Scaffold.
-    return const Column(
-      children: [
-        Expanded(
-          // Extract the list into its own widget to solve the context error
-          child: JobHistoryList(),
-        ),
-      ],
-    );
+    return const JobHistoryList();
   }
 }
 
@@ -23,78 +21,78 @@ class JobHistoryPage extends StatelessWidget {
 class JobHistoryList extends StatelessWidget {
   const JobHistoryList({super.key});
 
-  final List<Map<String, String>> completedJobs = const [
-    {
-      'title': 'Plumbing Fix at Koregaon Park',
-      'date': 'October 7, 2025',
-      'payout': '₹650',
-    },
-    {
-      'title': 'AC Servicing at Baner',
-      'date': 'October 7, 2025',
-      'payout': '₹850',
-    },
-    {
-      'title': 'Electrical Wiring Check',
-      'date': 'October 6, 2025',
-      'payout': '₹1200',
-    },
-    {
-      'title': 'Geyser Installation',
-      'date': 'October 5, 2025',
-      'payout': '₹700',
-    },
-  ];
-
   @override
   Widget build(BuildContext context) {
-    return ListView.builder(
-      padding: const EdgeInsets.all(16.0),
-      itemCount: completedJobs.length,
-      itemBuilder: (context, index) {
-        final job = completedJobs[index];
-        return _buildHistoryCard(
-          context: context, // Pass the context
-          title: job['title']!,
-          date: job['date']!,
-          payout: job['payout']!,
+    // Access the provider
+    final jobProvider = Provider.of<JobProvider>(context, listen: false);
+
+    return StreamBuilder<List<JobModel>>(
+      stream: jobProvider.completedJobsStream, // Listen to the new stream
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(
+            child: CircularProgressIndicator(color: Colors.white),
+          );
+        }
+        if (snapshot.hasError) {
+          print("!!! JOB HISTORY STREAM ERROR: ${snapshot.error}");
+          return const Center(
+            child: Text(
+              'Error loading job history.',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          );
+        }
+
+        if (snapshot.hasError) {
+          return const Center(
+            child: Text(
+              'Error loading job history.',
+              style: TextStyle(color: Colors.redAccent),
+            ),
+          );
+        }
+        if (!snapshot.hasData || snapshot.data!.isEmpty) {
+          return Center(
+            child: _buildGlassCard(
+              child: const Text(
+                'No completed jobs found.',
+                style: TextStyle(color: Colors.white70),
+              ),
+            ),
+          );
+        }
+
+        final jobs = snapshot.data!;
+        return ListView.builder(
+          padding: const EdgeInsets.all(16.0),
+          itemCount: jobs.length,
+          itemBuilder: (context, index) {
+            final job = jobs[index];
+            return _buildTappableHistoryCard(context: context, job: job);
+          },
         );
       },
     );
   }
 
-  Widget _buildGlassCard({required Widget child}) {
-    return ClipRRect(
-      borderRadius: BorderRadius.circular(20.0),
-      child: BackdropFilter(
-        filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
-        child: Container(
-          padding: const EdgeInsets.all(16.0),
-          decoration: BoxDecoration(
-            color: Colors.white.withOpacity(0.2),
-            borderRadius: BorderRadius.circular(20.0),
-            border: Border.all(color: Colors.white.withOpacity(0.3)),
-          ),
-          child: Material(type: MaterialType.transparency, child: child),
-        ),
-      ),
-    );
-  }
-
-  Widget _buildHistoryCard({
+  Widget _buildTappableHistoryCard({
     required BuildContext context,
-    required String title,
-    required String date,
-    required String payout,
+    required JobModel job,
   }) {
+    // Format the completion date for display
+    final date =
+        job.completionDate != null
+            ? DateFormat.yMMMd().format(job.completionDate!)
+            : 'N/A';
+    log("$date");
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: InkWell(
         onTap: () {
-          // This context is now valid for navigation
           Navigator.of(context).push(
             MaterialPageRoute(
-              builder: (context) => const CompletedJobDetailPage(),
+              builder: (context) => CompletedJobDetailPage(job: job),
             ),
           );
         },
@@ -113,7 +111,7 @@ class JobHistoryList extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      title,
+                      job.title,
                       style: const TextStyle(
                         color: Colors.white,
                         fontSize: 16,
@@ -133,7 +131,7 @@ class JobHistoryList extends StatelessWidget {
               ),
               const SizedBox(width: 16),
               Text(
-                payout,
+                '₹${job.payout.toStringAsFixed(0)}',
                 style: const TextStyle(
                   color: Colors.greenAccent,
                   fontSize: 16,
@@ -142,6 +140,24 @@ class JobHistoryList extends StatelessWidget {
               ),
             ],
           ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildGlassCard({required Widget child}) {
+    return ClipRRect(
+      borderRadius: BorderRadius.circular(20.0),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10.0, sigmaY: 10.0),
+        child: Container(
+          padding: const EdgeInsets.all(16.0),
+          decoration: BoxDecoration(
+            color: Colors.white.withOpacity(0.2),
+            borderRadius: BorderRadius.circular(20.0),
+            border: Border.all(color: Colors.white.withOpacity(0.3)),
+          ),
+          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
     );

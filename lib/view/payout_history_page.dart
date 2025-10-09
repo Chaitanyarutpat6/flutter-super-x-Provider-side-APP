@@ -1,24 +1,22 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:service_provider_side/model/job_model.dart';
+import 'package:service_provider_side/providers/job_provider.dart';
 
 class PayoutHistoryPage extends StatelessWidget {
   const PayoutHistoryPage({super.key});
 
-  // Dummy data for payout history
-  final List<Map<String, String>> payoutHistory = const [
-    {'id': '#P5821', 'date': 'October 1, 2025', 'amount': '₹5,500', 'status': 'Completed'},
-    {'id': '#P5799', 'date': 'September 25, 2025', 'amount': '₹4,800', 'status': 'Completed'},
-    {'id': '#P5780', 'date': 'September 18, 2025', 'amount': '₹6,200', 'status': 'Completed'},
-    {'id': '#P5765', 'date': 'September 11, 2025', 'amount': '₹4,500', 'status': 'Completed'},
-    {'id': '#P5750', 'date': 'September 4, 2025', 'amount': '₹5,100', 'status': 'Completed'},
-  ];
-
   // --- UI Colors ---
-  static const Color primaryColor = Color(0xFF1A237E); // Indigo
-  static const Color accentColor = Color(0xFF29B6F6); // Light Blue
+  static const Color primaryColor = Color(0xFF1A237E);
+  static const Color accentColor = Color(0xFF29B6F6);
 
   @override
   Widget build(BuildContext context) {
+    // Access the provider but don't listen here, StreamBuilder will handle it
+    final jobProvider = Provider.of<JobProvider>(context, listen: false);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
@@ -33,16 +31,42 @@ class PayoutHistoryPage extends StatelessWidget {
             children: [
               _buildCustomAppBar(context),
               Expanded(
-                child: ListView.builder(
-                  padding: const EdgeInsets.all(16.0),
-                  itemCount: payoutHistory.length,
-                  itemBuilder: (context, index) {
-                    final payout = payoutHistory[index];
-                    return _buildHistoryCard(
-                      id: payout['id']!,
-                      date: payout['date']!,
-                      amount: payout['amount']!,
-                      status: payout['status']!,
+                child: StreamBuilder<List<JobModel>>(
+                  stream:
+                      jobProvider.completedJobsStream, // Listen to the stream
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.white),
+                      );
+                    }
+                    if (snapshot.hasError) {
+                      return const Center(
+                        child: Text(
+                          'Error loading history.',
+                          style: TextStyle(color: Colors.redAccent),
+                        ),
+                      );
+                    }
+                    if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                      return Center(
+                        child: _buildGlassCard(
+                          child: const Text(
+                            'No payout history found.',
+                            style: TextStyle(color: Colors.white70),
+                          ),
+                        ),
+                      );
+                    }
+
+                    final jobs = snapshot.data!;
+                    return ListView.builder(
+                      padding: const EdgeInsets.all(16.0),
+                      itemCount: jobs.length,
+                      itemBuilder: (context, index) {
+                        final job = jobs[index];
+                        return _buildHistoryCard(job);
+                      },
                     );
                   },
                 ),
@@ -91,13 +115,20 @@ class PayoutHistoryPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(20.0),
             border: Border.all(color: Colors.white.withOpacity(0.3)),
           ),
-          child: child,
+          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
     );
   }
 
-  Widget _buildHistoryCard({required String id, required String date, required String amount, required String status}) {
+  Widget _buildHistoryCard(JobModel job) {
+    // Format the date for display
+    final date =
+        job.completionDate != null
+            ? DateFormat.yMMMMd().format(job.completionDate!)
+            : 'N/A';
+    final totalPayout = job.payout + (job.materialsCost ?? 0.0);
+
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
       child: _buildGlassCard(
@@ -106,14 +137,31 @@ class PayoutHistoryPage extends StatelessWidget {
           children: [
             Row(
               children: [
-                const Icon(Icons.receipt_long_outlined, color: Colors.white, size: 32),
+                const Icon(
+                  Icons.receipt_long_outlined,
+                  color: Colors.white,
+                  size: 32,
+                ),
                 const SizedBox(width: 16),
                 Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(id, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+                    Text(
+                      job.title,
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
                     const SizedBox(height: 4),
-                    Text(date, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                    Text(
+                      date,
+                      style: const TextStyle(
+                        color: Colors.white70,
+                        fontSize: 14,
+                      ),
+                    ),
                   ],
                 ),
               ],
@@ -121,9 +169,19 @@ class PayoutHistoryPage extends StatelessWidget {
             Column(
               crossAxisAlignment: CrossAxisAlignment.end,
               children: [
-                Text(amount, style: const TextStyle(color: Colors.greenAccent, fontSize: 18, fontWeight: FontWeight.bold)),
+                Text(
+                  '₹${totalPayout.toStringAsFixed(0)}',
+                  style: const TextStyle(
+                    color: Colors.greenAccent,
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
                 const SizedBox(height: 4),
-                Text(status, style: const TextStyle(color: Colors.white70, fontSize: 14)),
+                const Text(
+                  'Completed',
+                  style: TextStyle(color: Colors.white70, fontSize: 14),
+                ),
               ],
             ),
           ],

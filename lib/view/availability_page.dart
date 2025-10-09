@@ -1,5 +1,9 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:provider/provider.dart';
+import 'package:service_provider_side/model/provider_model.dart';
+import 'package:service_provider_side/providers/profile_provider.dart';
 import 'package:table_calendar/table_calendar.dart';
 
 class AvailabilityPage extends StatefulWidget {
@@ -12,11 +16,6 @@ class AvailabilityPage extends StatefulWidget {
 class _AvailabilityPageState extends State<AvailabilityPage> {
   DateTime _focusedDay = DateTime.now();
   DateTime? _selectedDay;
-  // To keep track of blocked off dates
-  final Set<DateTime> _blockedDays = {
-    DateTime.utc(2025, 10, 20),
-    DateTime.utc(2025, 10, 21),
-  };
 
   @override
   void initState() {
@@ -24,20 +23,17 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
     _selectedDay = _focusedDay;
   }
 
-  // --- UI Colors ---
-  static const Color primaryColor = Color(0xFF1A237E); // Indigo
-  static const Color accentColor = Color(0xFF29B6F6); // Light Blue
+  static const Color primaryColor = Color(0xFF1A237E);
+  static const Color accentColor = Color(0xFF29B6F6);
 
   @override
   Widget build(BuildContext context) {
+    final profileProvider = Provider.of<ProfileProvider>(context, listen: false);
+
     return Scaffold(
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [primaryColor, accentColor],
-            begin: Alignment.topLeft,
-            end: Alignment.bottomRight,
-          ),
+          gradient: LinearGradient(colors: [primaryColor, accentColor], begin: Alignment.topLeft, end: Alignment.bottomRight),
         ),
         child: SafeArea(
           child: Column(
@@ -48,9 +44,23 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
                     children: [
-                      _buildCalendarSection(),
+                      // This StreamBuilder handles the calendar and blocked dates
+                      StreamBuilder<Set<DateTime>>(
+                        stream: profileProvider.blockedDatesStream,
+                        builder: (context, snapshot) {
+                          final blockedDays = snapshot.data ?? {};
+                          return _buildCalendarSection(profileProvider, blockedDays);
+                        },
+                      ),
                       const SizedBox(height: 24),
-                      _buildTimeSlotsSection(),
+                      // This StreamBuilder handles the weekly time slots
+                      StreamBuilder<ProviderModel?>(
+                        stream: profileProvider.providerStream,
+                        builder: (context, snapshot) {
+                           final availability = snapshot.data?.weeklyAvailability ?? {};
+                           return _buildTimeSlotsSection(availability);
+                        }
+                      ),
                     ],
                   ),
                 ),
@@ -69,15 +79,9 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
       padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 12.0),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28),
-            onPressed: () => Navigator.of(context).pop(),
-          ),
+          IconButton(icon: const Icon(Icons.arrow_back, color: Colors.white, size: 28), onPressed: () => Navigator.of(context).pop()),
           const SizedBox(width: 8),
-          const Text(
-            'My Availability',
-            style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold),
-          ),
+          const Text('My Availability', style: TextStyle(color: Colors.white, fontSize: 24, fontWeight: FontWeight.bold)),
         ],
       ),
     );
@@ -95,16 +99,13 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
             borderRadius: BorderRadius.circular(20.0),
             border: Border.all(color: Colors.white.withOpacity(0.3)),
           ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: child,
-          ),
+          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
     );
   }
 
-  Widget _buildCalendarSection() {
+  Widget _buildCalendarSection(ProfileProvider profileProvider, Set<DateTime> blockedDays) {
     return _buildGlassCard(
       child: TableCalendar(
         firstDay: DateTime.utc(2020, 1, 1),
@@ -117,19 +118,19 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
             _selectedDay = selectedDay;
             _focusedDay = focusedDay;
           });
+          // Call the provider to toggle the date's blocked status
+          profileProvider.toggleBlockedDate(selectedDay);
         },
-        // Custom builder to mark blocked days
         calendarBuilders: CalendarBuilders(
           defaultBuilder: (context, day, focusedDay) {
-            for (DateTime d in _blockedDays) {
-              if (day.day == d.day && day.month == d.month && day.year == d.year) {
-                return Center(
-                  child: Text(
-                    '${day.day}',
-                    style: const TextStyle(color: Colors.redAccent, decoration: TextDecoration.lineThrough),
-                  ),
-                );
-              }
+            // Check if the day is in the blocked set
+            if (blockedDays.any((d) => isSameDay(d, day))) {
+              return Center(
+                child: Text(
+                  '${day.day}',
+                  style: const TextStyle(color: Colors.redAccent, decoration: TextDecoration.lineThrough),
+                ),
+              );
             }
             return null;
           },
@@ -156,33 +157,39 @@ class _AvailabilityPageState extends State<AvailabilityPage> {
     );
   }
 
-  Widget _buildTimeSlotsSection() {
+  Widget _buildTimeSlotsSection(Map<String, dynamic> availability) {
+    // A default schedule in case nothing is set in the database yet
+    final defaultSchedule = {
+      'Monday - Friday': '9:00 AM - 5:00 PM',
+      'Saturday': '10:00 AM - 2:00 PM',
+      'Sunday': 'Unavailable',
+    };
+    final schedule = availability.isNotEmpty ? availability : defaultSchedule;
+
     return _buildGlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text(
-            'Set Weekly Hours',
-            style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold),
-          ),
+          const Text('My Weekly Hours', style: TextStyle(fontSize: 18, color: Colors.white, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
-          _buildTimeSlotRow('Monday - Friday', '9:00 AM - 5:00 PM'),
-          const Divider(color: Colors.white30, height: 24),
-          _buildTimeSlotRow('Saturday', '10:00 AM - 2:00 PM'),
-          const Divider(color: Colors.white30, height: 24),
-          _buildTimeSlotRow('Sunday', 'Unavailable'),
+          ...schedule.entries.map((entry) {
+            return _buildTimeSlotRow(entry.key, entry.value.toString());
+          }).toList(),
         ],
       ),
     );
   }
 
   Widget _buildTimeSlotRow(String day, String time) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(day, style: const TextStyle(color: Colors.white, fontSize: 16)),
-        Text(time, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 8.0),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Text(day, style: const TextStyle(color: Colors.white, fontSize: 16)),
+          Text(time, style: const TextStyle(color: Colors.white, fontSize: 16, fontWeight: FontWeight.bold)),
+        ],
+      ),
     );
   }
 }

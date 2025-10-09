@@ -1,8 +1,13 @@
+import 'dart:developer';
 import 'dart:ui';
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
+import 'package:service_provider_side/model/job_model.dart';
 
 class CompletedJobDetailPage extends StatelessWidget {
-  const CompletedJobDetailPage({super.key});
+  // --- THIS PAGE NOW REQUIRES A JOBMODEL ---
+  final JobModel job;
+  const CompletedJobDetailPage({super.key, required this.job});
 
   // --- UI Colors ---
   static const Color primaryColor = Color(0xFF1A237E);
@@ -57,7 +62,14 @@ class CompletedJobDetailPage extends StatelessWidget {
             onPressed: () => Navigator.of(context).pop(),
           ),
           const SizedBox(width: 8),
-          const Text('Completed Job Details', style: TextStyle(color: Colors.white, fontSize: 22, fontWeight: FontWeight.bold)),
+          const Text(
+            'Completed Job Details',
+            style: TextStyle(
+              color: Colors.white,
+              fontSize: 22,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -75,10 +87,7 @@ class CompletedJobDetailPage extends StatelessWidget {
             borderRadius: BorderRadius.circular(20.0),
             border: Border.all(color: Colors.white.withOpacity(0.3)),
           ),
-          child: Material(
-            type: MaterialType.transparency,
-            child: child,
-          ),
+          child: Material(type: MaterialType.transparency, child: child),
         ),
       ),
     );
@@ -87,32 +96,57 @@ class CompletedJobDetailPage extends StatelessWidget {
   Widget _buildSectionHeader(String title) {
     return Padding(
       padding: const EdgeInsets.only(left: 8.0, bottom: 12.0),
-      child: Text(title, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.white)),
+      child: Text(
+        title,
+        style: const TextStyle(
+          fontSize: 20,
+          fontWeight: FontWeight.bold,
+          color: Colors.white,
+        ),
+      ),
     );
   }
 
   Widget _buildJobSummary() {
+    // Format the date for display
+    final date =
+        job.completionDate != null
+            ? DateFormat.yMMMMd().format(job.completionDate!)
+            : 'N/A';
+    log("$date");
     return _buildGlassCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Plumbing Fix at Koregaon Park', style: TextStyle(color: Colors.white, fontSize: 20, fontWeight: FontWeight.bold)),
+          Text(
+            job.title,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 20,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
           const SizedBox(height: 8),
-          Text('Completed on October 7, 2025', style: TextStyle(color: Colors.white70)),
+
+          Text('Completed on $date', style: TextStyle(color: Colors.white70)),
           const SizedBox(height: 16),
           const Row(
+            // Placeholder for rating
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text('Client Rating', style: TextStyle(color: Colors.white70, fontSize: 16)),
+              Text(
+                'Client Rating',
+                style: TextStyle(color: Colors.white70, fontSize: 16),
+              ),
               Row(
                 children: [
                   Icon(Icons.star, color: Colors.yellow, size: 20),
                   Icon(Icons.star, color: Colors.yellow, size: 20),
                   Icon(Icons.star, color: Colors.yellow, size: 20),
                   Icon(Icons.star, color: Colors.yellow, size: 20),
-                  Icon(Icons.star, color: Colors.yellow, size: 20),
+                  Icon(Icons.star_half, color: Colors.yellow, size: 20),
                 ],
-              )
+              ),
             ],
           ),
         ],
@@ -121,6 +155,7 @@ class CompletedJobDetailPage extends StatelessWidget {
   }
 
   Widget _buildInvoiceDetails() {
+    final double totalPayout = job.payout + (job.materialsCost ?? 0.0);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -128,26 +163,52 @@ class CompletedJobDetailPage extends StatelessWidget {
         _buildGlassCard(
           child: Column(
             children: [
-              _buildInvoiceRow('Service Charge', '₹500'),
+              _buildInvoiceRow(
+                'Service Charge',
+                '₹${job.payout.toStringAsFixed(0)}',
+              ),
               const Divider(color: Colors.white30, height: 20),
-              _buildInvoiceRow('Materials Cost', '₹150'),
+              // --- UPDATED: Use the dynamic materialsCost ---
+              _buildInvoiceRow(
+                'Materials Cost',
+                '₹${job.materialsCost.toStringAsFixed(0)}',
+              ),
               const Divider(color: Colors.white30, height: 20),
-              _buildInvoiceRow('Total Payout', '₹650', isTotal: true),
+              // --- UPDATED: Use the calculated total ---
+              _buildInvoiceRow(
+                'Total Payout',
+                '₹${totalPayout.toStringAsFixed(0)}',
+                isTotal: true,
+              ),
             ],
           ),
         ),
       ],
     );
   }
-  
+
   Widget _buildInvoiceRow(String title, String amount, {bool isTotal = false}) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 8.0),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Text(title, style: TextStyle(color: Colors.white70, fontSize: 16, fontWeight: isTotal ? FontWeight.bold : FontWeight.normal)),
-          Text(amount, style: TextStyle(color: isTotal ? Colors.greenAccent : Colors.white, fontSize: 18, fontWeight: FontWeight.bold)),
+          Text(
+            title,
+            style: TextStyle(
+              color: Colors.white70,
+              fontSize: 16,
+              fontWeight: isTotal ? FontWeight.bold : FontWeight.normal,
+            ),
+          ),
+          Text(
+            amount,
+            style: TextStyle(
+              color: isTotal ? Colors.greenAccent : Colors.white,
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
         ],
       ),
     );
@@ -160,20 +221,43 @@ class CompletedJobDetailPage extends StatelessWidget {
         _buildSectionHeader('Proof of Work'),
         Row(
           children: [
-            Expanded(child: _buildPhotoPlaceholder('Before')),
+            Expanded(
+              child: _buildPhotoPlaceholder('Before', job.beforeImageUrl),
+            ),
             const SizedBox(width: 16),
-            Expanded(child: _buildPhotoPlaceholder('After')),
+            Expanded(child: _buildPhotoPlaceholder('After', job.afterImageUrl)),
           ],
         ),
       ],
     );
   }
 
-  Widget _buildPhotoPlaceholder(String label) {
+  Widget _buildPhotoPlaceholder(String label, String? imageUrl) {
     return _buildGlassCard(
       child: Column(
         children: [
-          const Icon(Icons.image_outlined, color: Colors.white70, size: 50),
+          Container(
+            height: 120,
+            width: double.infinity,
+            decoration: BoxDecoration(
+              borderRadius: BorderRadius.circular(12.0),
+              image:
+                  imageUrl != null
+                      ? DecorationImage(
+                        image: NetworkImage(imageUrl),
+                        fit: BoxFit.cover,
+                      )
+                      : null,
+            ),
+            child:
+                imageUrl == null
+                    ? const Icon(
+                      Icons.image_not_supported_outlined,
+                      color: Colors.white70,
+                      size: 50,
+                    )
+                    : null,
+          ),
           const SizedBox(height: 8),
           Text(label, style: const TextStyle(color: Colors.white)),
         ],
